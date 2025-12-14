@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mondelēz • Digital Quality Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+  background:radial-gradient(circle at top,#0b1224,#020617);
+  color:#e5e7eb;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.container{
+  max-width:980px;
+  width:100%;
+  padding:40px 24px;
+  text-align:center;
+}
+.brand{
+  font-size:30px;
+  font-weight:700;
+  letter-spacing:.04em;
+  margin-bottom:6px;
+}
+.subtitle{
+  font-size:14px;
+  color:#9ca3af;
+  margin-bottom:32px;
+}
+.hero{
+  background:radial-gradient(circle at top left,#1f2937,#020617);
+  border-radius:22px;
+  padding:32px 24px;
+  border:1px solid #1f2937;
+  box-shadow:0 25px 60px rgba(15,23,42,.9);
+}
+.actions{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:18px;
+}
+.card{
+  background:linear-gradient(180deg,rgba(16,185,129,.08),rgba(2,6,23,0));
+  border-radius:18px;
+  padding:22px;
+  border:1px solid rgba(16,185,129,.25);
+  text-align:left;
+  transition:.15s;
+}
+.card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 18px 45px rgba(16,185,129,.25);
+}
+.card-title{
+  font-size:16px;
+  font-weight:600;
+  margin-bottom:6px;
+}
+.card-desc{
+  font-size:13px;
+  color:#9ca3af;
+  margin-bottom:14px;
+  line-height:1.5;
+}
+.btn{
+  display:inline-block;
+  padding:8px 14px;
+  border-radius:999px;
+  font-size:13px;
+  font-weight:600;
+  text-decoration:none;
+  background:linear-gradient(135deg,#10b981,#22c55e);
+  color:#020617;
+  box-shadow:0 10px 25px rgba(16,185,129,.35);
+}
+.footer{
+  margin-top:26px;
+  font-size:11px;
+  color:#6b7280;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+  <div class="brand">Mondelēz</div>
+  <div class="subtitle">Digital Quality Control & Production Intelligence</div>
+
+  <div class="hero">
+    <div class="actions">
+
+      <div class="card">
+        <div class="card-title">Laminator QC • Digital Forms</div>
+        <div class="card-desc">
+          Replace paper quality sheets with structured digital checklists.
+          Automatic timestamping, station context, archiving and export.
+        </div>
+        <a class="btn" href="https://evoconform-production.up.railway.app/" target="_blank">
+          Open QC Forms
+        </a>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Scale QC • Statistical Sampling</div>
+        <div class="card-desc">
+          Guided sampling with live statistics, CV checks, operator alerts
+          and direct Evocon & BI integration.
+        </div>
+        <a class="btn" href="https://evocondemo-production.up.railway.app/" target="_blank">
+          Open Scale Analysis
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footer">
+    Live demo
+  </div>
+
+</div>
+</body>
+</html>
