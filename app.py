@@ -1,145 +1,292 @@
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+import os
+import base64
+from datetime import datetime, timedelta
 
-app = FastAPI()
+import requests
+from flask import Flask, request, render_template
 
-HTML = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Mondelēz • Digital Quality Control</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+app = Flask(__name__)
 
-<style>
-  * { box-sizing: border-box; }
+# =========================
+# ENV VARS (Railway)
+# =========================
+EVOCON_TENANT = os.getenv("EVOCON_TENANT", "")
+EVOCON_SECRET = os.getenv("EVOCON_SECRET", "")
 
-  body {
-    margin: 0;
-    min-height: 100vh;
-    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-    background: radial-gradient(circle at top, #0b1224, #020617);
-    color: #e5e7eb;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+# =========================
+# CONFIG
+# =========================
+ORDERED_ITEMS = [
+    "Θερμοκρασία λαμινατορίου (°C)",
+    "Είδος μαργαρίνης",
+    "Θερμοκρασία μαργαρίνης (°C)",
+    "Λαμάκι μαργαρίνης (mm)",
+    "Λαμάκι recupero (mm)",
+    "Διάκενο μαχαιριών (cm)",
+    "Πάχος extruder (1η)",
+    "Πάχος extruder (2η)",
+    "Ποσοστό μαργαρίνης (%)",
+    "Ποσοστό ανακύκλωσης ζύμης recupero (%)",
+]
 
-  .container {
-    max-width: 980px;
-    width: 100%;
-    padding: 40px 24px;
-    text-align: center;
-  }
+ALLOWED_ITEMS = set(ORDERED_ITEMS)
 
-  .brand {
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    margin-bottom: 6px;
-  }
+SHIFT_START = {
+    "A": "06:00",
+    "B": "14:00",
+    "Γ": "22:00",
+}
 
-  .subtitle {
-    font-size: 14px;
-    color: #9ca3af;
-    margin-bottom: 32px;
-  }
+# =========================
+# BASIC ROUTES
+# =========================
+@app.get("/health")
+def health():
+    return {"ok": True}
 
-  .hero {
-    background: radial-gradient(circle at top left, #1f2937, #020617);
-    border-radius: 22px;
-    padding: 32px 24px;
-    border: 1px solid #1f2937;
-    box-shadow: 0 25px 60px rgba(15,23,42,0.9);
-  }
 
-  .actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 18px;
-  }
-
-  .card {
-    background: linear-gradient(180deg, rgba(16,185,129,0.08), rgba(2,6,23,0));
-    border-radius: 18px;
-    padding: 22px;
-    border: 1px solid rgba(16,185,129,0.25);
-    text-align: left;
-    transition: transform .15s ease, box-shadow .15s ease;
-  }
-
-  .card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 18px 45px rgba(16,185,129,0.25);
-  }
-
-  .card-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 6px;
-  }
-
-  .card-desc {
-    font-size: 13px;
-    color: #9ca3af;
-    margin-bottom: 14px;
-    line-height: 1.5;
-  }
-
-  .btn {
-    display: inline-block;
-    padding: 8px 14px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 600;
-    text-decoration: none;
-    background: linear-gradient(135deg, #10b981, #22c55e);
-    color: #020617;
-    box-shadow: 0 10px 25px rgba(16,185,129,0.35);
-  }
-</style>
-</head>
-
-<body>
-
-<div class="container">
-
-  <div class="brand">Mondelēz</div>
-  <div class="subtitle">Digital Quality Control & Production Intelligence</div>
-
-  <div class="hero">
-    <div class="actions">
-
-      <div class="card">
-        <div class="card-title">Laminator QC • Digital Forms</div>
-        <div class="card-desc">
-          Replace paper quality sheets with structured digital checklists.
-          Automatic timestamping, station context, archiving and export to BI or PDF.
-        </div>
-        <a class="btn" href="https://evoconform-production.up.railway.app/" target="_blank">
-          Open QC Forms
-        </a>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Scale QC • Statistical Sampling</div>
-        <div class="card-desc">
-          Guided sampling from scales with real-time statistics, CV checks,
-          operator alerts and direct integration to Evocon & Power BI.
-        </div>
-        <a class="btn" href="https://evocondemo-production.up.railway.app/" target="_blank">
-          Open Scale Analysis
-        </a>
-      </div>
-
-    </div>
-  </div>
-
-</div>
-
-</body>
-</html>
-"""
-
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def home():
-    return HTML
+    return "<a href='/print'>Go to Print</a> | <a href='/health'>Health</a>"
+
+
+# =========================
+# HELPERS
+# =========================
+def basic_auth_header():
+    if not EVOCON_TENANT or not EVOCON_SECRET:
+        raise RuntimeError("Missing EVOCON_TENANT / EVOCON_SECRET")
+    token = base64.b64encode(
+        f"{EVOCON_TENANT}:{EVOCON_SECRET}".encode("utf-8")
+    ).decode("utf-8")
+    return {"Authorization": f"Basic {token}"}
+
+
+def normalize_value(v):
+    if v is None:
+        return ""
+    s = str(v).strip()
+    if s in ("-", "N/A", "n/a"):
+        return ""
+    return s.replace(",", ".")
+
+
+def parse_hhmm(s):
+    try:
+        return datetime.strptime(s.strip(), "%H:%M").time()
+    except Exception:
+        return None
+
+
+def minutes(t):
+    return t.hour * 60 + t.minute
+
+
+def sort_donetime_list(times, shift_name):
+    start_str = SHIFT_START.get(shift_name, "00:00")
+    start_t = parse_hhmm(start_str) or datetime.strptime("00:00", "%H:%M").time()
+    start_m = minutes(start_t)
+
+    def key(tstr):
+        t = parse_hhmm(tstr) or datetime.strptime("00:00", "%H:%M").time()
+        m = minutes(t)
+        return (m - start_m) % (24 * 60)
+
+    return sorted(times, key=key)
+
+
+# =========================
+# EVOCON API (DATE-ONLY!)
+# =========================
+def fetch_checklists_json(start_date: str, end_date: str):
+    """
+    start_date / end_date MUST be YYYY-MM-DD
+    """
+    url = "https://api.evocon.com/api/reports/checklists_json"
+    headers = {
+        "Accept": "application/json",
+        **basic_auth_header(),
+    }
+    params = {
+        "startTime": start_date,
+        "endTime": end_date,
+    }
+
+    r = requests.get(url, headers=headers, params=params, timeout=45)
+
+    if r.status_code != 200:
+        raise RuntimeError(
+            f"Evocon API ERROR\n"
+            f"URL: {url}\n"
+            f"PARAMS: {params}\n"
+            f"STATUS: {r.status_code}\n"
+            f"BODY:\n{r.text[:1500]}"
+        )
+
+    try:
+        data = r.json()
+    except Exception as e:
+        raise RuntimeError(
+            f"Evocon returned NON-JSON\n"
+            f"STATUS: {r.status_code}\n"
+            f"ERROR: {e}\n"
+            f"BODY:\n{r.text[:1500]}"
+        )
+
+    if not isinstance(data, list):
+        raise RuntimeError(
+            f"Unexpected API response type: {type(data)}"
+        )
+
+    return data
+
+
+# =========================
+# DATA PROCESSING
+# =========================
+def build_shift_index(rows):
+    """
+    Find available (shiftDate, shift, station)
+    """
+    idx = {}
+    for r in rows:
+        sd = str(r.get("shiftDate") or "").strip()
+        sh = str(r.get("shift") or "").strip()
+        st = str(r.get("station") or "").strip()
+        dt = str(r.get("donetime") or "").strip()
+
+        if not (sd and sh and st and dt):
+            continue
+
+        t = parse_hhmm(dt)
+        key = (sd, sh, st)
+
+        if key not in idx:
+            idx[key] = {
+                "shiftDate": sd,
+                "shift": sh,
+                "station": st,
+                "last_time": t,
+            }
+        else:
+            if t and (idx[key]["last_time"] is None or t > idx[key]["last_time"]):
+                idx[key]["last_time"] = t
+
+    def sort_key(x):
+        try:
+            d = datetime.strptime(x["shiftDate"], "%Y-%m-%d").date()
+        except Exception:
+            d = datetime.min.date()
+        t = x["last_time"] or datetime.min.time()
+        return (d, t)
+
+    return sorted(idx.values(), key=sort_key, reverse=True)
+
+
+def build_report(rows, shiftDate, shiftName, station):
+    filtered = [
+        r for r in rows
+        if str(r.get("shiftDate") or "").strip() == shiftDate
+        and str(r.get("shift") or "").strip() == shiftName
+        and str(r.get("station") or "").strip() == station
+    ]
+
+    submissions = {}
+    meta = {}
+
+    for r in filtered:
+        donetime = str(r.get("donetime") or "").strip()
+        itemname = str(r.get("itemname") or "").strip()
+
+        if not donetime or itemname not in ALLOWED_ITEMS:
+            continue
+
+        submissions.setdefault(donetime, {})
+        submissions[donetime][itemname] = normalize_value(r.get("itemresult"))
+
+        if donetime not in meta:
+            meta[donetime] = {
+                "operator": str(r.get("operator") or "").strip(),
+                "product": str(r.get("productproduced") or "").strip(),
+                "productionOrder": str(r.get("productionOrder") or "").strip(),
+            }
+
+    columns = sort_donetime_list(list(submissions.keys()), shiftName)
+
+    matrix = []
+    for item in ORDERED_ITEMS:
+        matrix.append({
+            "label": item,
+            "values": [submissions.get(t, {}).get(item, "") for t in columns]
+        })
+
+    header = {"operator": "", "product": "", "productionOrder": ""}
+    if columns:
+        header = meta.get(columns[-1], header)
+
+    return {
+        "columns": columns,
+        "matrix": matrix,
+        "header": header,
+        "shiftDate": shiftDate,
+        "shift": shiftName,
+        "station": station,
+    }
+
+
+# =========================
+# UI ROUTES
+# =========================
+@app.get("/print")
+def picker():
+    today = datetime.now().date()
+    start_date = (today - timedelta(days=3)).strftime("%Y-%m-%d")
+    end_date = today.strftime("%Y-%m-%d")
+
+    rows = fetch_checklists_json(start_date, end_date)
+    shifts = build_shift_index(rows)
+
+    if not shifts:
+        return "No shifts found in last 3 days."
+
+    return render_template("picker.html", shifts=shifts)
+
+
+@app.get("/print/render")
+def render_print():
+    key = request.args.get("key", "")
+    parts = key.split("|")
+    if len(parts) != 3:
+        return "Invalid selection", 400
+
+    shiftDate, shiftName, station = parts[0].strip(), parts[1].strip(), parts[2].strip()
+
+    try:
+        day = datetime.strptime(shiftDate, "%Y-%m-%d").date()
+    except Exception as e:
+        return f"Bad shiftDate: {e}", 400
+
+    start_date = (day - timedelta(days=1)).strftime("%Y-%m-%d")
+    end_date = (day + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    try:
+        rows = fetch_checklists_json(start_date, end_date)
+        report = build_report(rows, shiftDate, shiftName, station)
+
+        if not report["columns"]:
+            return (
+                f"No data found\n\n"
+                f"shiftDate={shiftDate}\nshift={shiftName}\nstation={station}\n"
+                f"range={start_date} → {end_date}"
+            )
+
+        return render_template("print_form.html", **report)
+
+    except Exception as e:
+        return (
+            "<pre style='white-space:pre-wrap'>"
+            f"ERROR:\n{e}\n\n"
+            f"shiftDate={shiftDate}\nshift={shiftName}\nstation={station}\n"
+            f"range={start_date} → {end_date}"
+            "</pre>"
+        ), 500
